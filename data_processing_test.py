@@ -5,7 +5,17 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from scipy.sparse import issparse
+import re
 
+def preprocess_tweet(text):
+    # Remove URLs
+    text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE)
+    # Remove user @ references and '#' from tweet
+    text = re.sub(r'\@\w+|\#','', text)
+    # Remove new lines and other escape sequences
+    text = text.replace('\n', ' ').replace('\r', '').replace('\t', '')
+    # Optional: additional preprocessing steps like lowercasing, etc.
+    return text
 
 # Assuming the JSON file is in the 'data' directory and named 'your_dataset.json'
 file_path = 'data/alpaca-bitcoin-sentiment-dataset.json'
@@ -47,7 +57,7 @@ def check_and_log_mismatch(X, y, mismatch_file='mismatch_data.txt'):
         min_length = min(len(X), len(y))
         mismatched_indices = list(range(min_length, max(len(X), len(y))))
 
-        with open(mismatch_file, 'a') as file:
+        with open(mismatch_file, 'a', encoding='utf-8') as file:
             file.write("Mismatched Data:\n")
             for index in mismatched_indices:
                 if index < len(X):
@@ -56,8 +66,8 @@ def check_and_log_mismatch(X, y, mismatch_file='mismatch_data.txt'):
                     file.write(f"y[{index}]: {y.iloc[index]}\n")
 
         # Exclude mismatched rows
-        X = X.iloc[:min_length]
-        y = y.iloc[:min_length]
+        X = X[:min_length]
+        y = y[:min_length]
         return X, y, True
     else:
         print("No mismatch detected.")
@@ -66,6 +76,11 @@ def check_and_log_mismatch(X, y, mismatch_file='mismatch_data.txt'):
 # Use the processed data as needed
 if data:
     X_train, X_test, y_train, y_test = data
+    
+    # Apply preprocess_tweet to each tweet in X_train and X_test
+    X_train = [preprocess_tweet(tweet) for tweet in X_train]
+    X_test = [preprocess_tweet(tweet) for tweet in X_test]
+    
     # Vectorize the text data using CountVectorizer
     vectorizer = CountVectorizer()
     
