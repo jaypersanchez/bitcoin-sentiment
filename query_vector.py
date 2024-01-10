@@ -3,15 +3,16 @@ import psycopg2
 import torch
 import numpy as np
 import os
+import faiss
 from scipy.spatial.distance import cosine
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 #Environment variables
 consumer_key = os.getenv('CONSUMER_KEY')
-dbname = os.getenv('DBNAME')
-user = os.getenv('POSTGRES_USER')
-password = os.getenv('POSTGRES_PASSWORD')
-host = os.getenv('POSTGRES_HOST')
+_dbname = os.getenv('DBNAME')
+_user = os.getenv('POSTGRES_USER')
+_password = os.getenv('POSTGRES_PASSWORD')
+_host = os.getenv('POSTGRES_HOST')
 
 # Initialize NLP model
 tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
@@ -23,41 +24,47 @@ def get_vector(text):
     outputs = model(**inputs)
     return outputs[0][0].detach().numpy()
 
-def cosine_similarity(vec_a, vec_b):
-    return 1 - cosine(vec_a, vec_b)
-
 # Connect to PostgreSQL database
 conn = psycopg2.connect(
-    dbname=dbname, user=user, password=password, host=host
+    dbname='semantic', user='postgres', password='Ph1LL!fe', host='localhost'
 )
 cur = conn.cursor()
 
 # Accept query from console
 query = input("Enter your query: ")
-query_vec = get_vector(query).tolist()  # Convert to a list of floats
+query_vec = get_vector(query)
 
 # Fetch vectors from the database
 cur.execute("SELECT id, vector FROM tweet_sentiments")
 rows = cur.fetchall()
 
-# Calculate similarities
-similarities = []
-for row in rows:
-    vec_b = np.array(row[1])
-    similarity = cosine_similarity(np.array(query_vec), vec_b)
-    similarities.append((row[0], similarity))
+# Prepare data for Faiss
+ids = np.array([row[0] for row in rows])
+embeddings = np.array([row[1] for row in rows])
 
-# Sort by highest similarity
-similarities.sort(key=lambda x: x[1], reverse=True)
+# Dimension of the vectors
+d = len(embeddings[0])
 
-# Get top results (for example, top 5)
-top_results = similarities[:5]
+# Create a Faiss index
+index = faiss.IndexFlatL2(d)  # Using L2 distance for similarity
 
-# Retrieve and display the results
-for result in top_results:
-    cur.execute("SELECT input, output FROM tweet_sentiments WHERE id = %s", (result[0],))
+# Add vectors to the index
+index.add(embeddings)
+
+# Function to perform a search
+def search(query_vec, k=5):
+    _, indices = index.search(np.array([query_vec]), k)
+    return ids[indices[0]]
+
+result_ids = search(query_vec)
+
+# Fetch and display corresponding tweet data
+for tweet_id in result_ids:
+    # Convert numpy.int32 to Python int
+    tweet_id_native = int(tweet_id)
+    cur.execute("SELECT input, output FROM tweet_sentiments WHERE id = %s", (tweet_id_native,))
     tweet = cur.fetchone()
-    print(f"Tweet: {tweet[0]}, Sentiment: {tweet[1]}, Similarity: {result[1]}")
+    print(f"Tweet: {tweet[0]}, Sentiment: {tweet[1]}")
 
 # Commit changes and close the connection
 conn.commit()
