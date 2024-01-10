@@ -6,6 +6,9 @@ from sklearn.naive_bayes import MultinomialNB
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from scipy.sparse import issparse
 import re
+import pickle
+import os
+print("Current Working Directory:", os.getcwd())
 
 def preprocess_tweet(text):
     # Remove URLs
@@ -18,7 +21,7 @@ def preprocess_tweet(text):
     return text
 
 # Assuming the JSON file is in the 'data' directory and named 'your_dataset.json'
-file_path = 'data/alpaca-bitcoin-sentiment-dataset.json'
+file_path = 'data/cleaned_sentiment_dataset.json'
 # Print a loading message
 print("Loading the dataset for testing. Please wait.....")
 df = pd.read_json(file_path)
@@ -73,6 +76,39 @@ def check_and_log_mismatch(X, y, mismatch_file='mismatch_data.txt'):
         print("No mismatch detected.")
         return X, y, False
 
+def save_model_and_vectorizer(model, vectorizer, model_file_name='data/sentiment_model.pkl', vectorizer_file_name='data/vectorizer.pkl'):
+    try:
+        # Check if the vectorizer is fitted
+        if not vectorizer.fixed_vocabulary_:
+            print("Vectorizer is not fitted. Fitting it now...")
+            # Assuming you have X_train, which contains the training data
+            vectorizer.fit(X_train)
+            
+        # Save the model
+        with open(model_file_name, 'wb') as model_file:
+            pickle.dump(model, model_file)
+        
+        # Save the vectorizer
+        with open(vectorizer_file_name, 'wb') as vectorizer_file:
+            pickle.dump(vectorizer, vectorizer_file)
+        
+        print("Model and vectorizer saved successfully.")
+    except Exception as e:
+        print(f"Error saving model: {e}")
+
+def remove_mismatched_data(X, y):
+    if len(X) != len(y):
+        print("Mismatch detected. Excluding problematic rows.")
+        min_length = min(len(X), len(y))
+
+        # Exclude mismatched rows
+        X = X[:min_length]
+        y = y[:min_length]
+        return X, y
+    else:
+        print("No mismatch detected.")
+        return X, y
+        
 # Use the processed data as needed
 if data:
     X_train, X_test, y_train, y_test = data
@@ -85,44 +121,53 @@ if data:
     vectorizer = CountVectorizer()
     
     # Check for mismatch and handle it
-    X_train, y_train, mismatch_found = check_and_log_mismatch(X_train, y_train)
+    X_train, y_train, mismatch_found_train = check_and_log_mismatch(X_train, y_train)
+    X_test, y_test, mismatch_found_test = check_and_log_mismatch(X_test, y_test)
 
-    if not mismatch_found:
-        X_train_vectorized = vectorizer.fit_transform(X_train)
-        X_test_vectorized = vectorizer.transform(X_test)
+    # Remove mismatched data
+    if mismatch_found_train:
+        X_train, y_train = remove_mismatched_data(X_train, y_train)
+    if mismatch_found_test:
+        X_test, y_test = remove_mismatched_data(X_test, y_test)
+
+    #if not mismatch_found:
+    X_train_vectorized = vectorizer.fit_transform(X_train)
+    X_test_vectorized = vectorizer.transform(X_test)
     
-        print("X_train_vectorized shape:", X_train_vectorized.shape)
-        print("y_train shape:", y_train.shape)
+    print("X_train_vectorized shape:", X_train_vectorized.shape)
+    print("y_train shape:", y_train.shape)
 
-        # Check if the lengths of X_train_vectorized and y_train match
-        check_sample_lengths(X_train_vectorized, y_train)
+    # Check if the lengths of X_train_vectorized and y_train match
+    check_sample_lengths(X_train_vectorized, y_train)
         
-         # Ensure y_train aligns with X_train_vectorized
-        if X_train_vectorized.shape[0] != len(y_train):
-            print("Adjusting y_train to match X_train_vectorized...")
-            y_train = y_train.iloc[:X_train_vectorized.shape[0]]
+    # Ensure y_train aligns with X_train_vectorized
+    if X_train_vectorized.shape[0] != len(y_train):
+        print("Adjusting y_train to match X_train_vectorized...")
+        y_train = y_train.iloc[:X_train_vectorized.shape[0]]
             
-        # Train a Naive Bayes classifier
-        nb_classifier = MultinomialNB()
-        nb_classifier.fit(X_train_vectorized, y_train)
+    # Train a Naive Bayes classifier
+    nb_classifier = MultinomialNB()
+    nb_classifier.fit(X_train_vectorized, y_train)
         
-        # Make predictions on the test set
-        y_pred = nb_classifier.predict(X_test_vectorized)
+    # Make predictions on the test set
+    y_pred = nb_classifier.predict(X_test_vectorized)
         
-        # Align y_test with y_pred
-        if len(y_pred) != len(y_test):
-            print("Adjusting y_test to match the predictions...")
-            y_test = y_test.iloc[:len(y_pred)]
+    # Align y_test with y_pred
+    if len(y_pred) != len(y_test):
+        print("Adjusting y_test to match the predictions...")
+        y_test = y_test.iloc[:len(y_pred)]
         
-        # Evaluate the performance
-        accuracy = accuracy_score(y_test, y_pred)
-        conf_matrix = confusion_matrix(y_test, y_pred)
-        classification_rep = classification_report(y_test, y_pred)
+    # Evaluate the performance
+    accuracy = accuracy_score(y_test, y_pred)
+    conf_matrix = confusion_matrix(y_test, y_pred)
+    classification_rep = classification_report(y_test, y_pred)
         
-        # Display the results
-        print(f"Accuracy: {accuracy:.2f}")
-        print("Confusion Matrix:")
-        print(conf_matrix)
-        print("Classification Report:")
-        print(classification_rep)
+    # Display the results
+    print(f"Accuracy: {accuracy:.2f}")
+    print("Confusion Matrix:")
+    print(conf_matrix)
+    print("Classification Report:")
+    print(classification_rep)
     
+    # Save the trained model and vectorizer
+    save_model_and_vectorizer(nb_classifier, vectorizer)
