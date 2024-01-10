@@ -63,6 +63,7 @@ def search(query_vec, k=5):
 
 result_ids = search(query_vec)
 tweets_data = []
+all_responses = []
 
 # Fetch and display corresponding tweet data
 for tweet_id in result_ids:
@@ -72,6 +73,12 @@ for tweet_id in result_ids:
     tweet = cur.fetchone()
     #print(f"Tweet: {tweet[0]}, Sentiment: {tweet[1]}")
     tweets_data.append(tweet)
+
+# Initialize sentiment analysis model
+sentiment_analyzer = pipeline("sentiment-analysis")
+
+def analyze_sentiment(text):
+    return sentiment_analyzer(text)[0]
 
 def generate_response(input_text):
     generator = pipeline('text-generation', model='gpt2')  # or another model of your choice
@@ -85,6 +92,11 @@ def generate_response(input_text):
 for tweet in tweets_data:
     tweet_content = tweet[0]  # Assuming tweet[0] is the tweet text
     response_text = generate_response(tweet_content)
+    
+    # Analyze sentiment of the response
+    sentiment_result = analyze_sentiment(response_text)
+    all_responses.append(sentiment_result)
+    
     #print(f"Tweet: {tweet_content}, Generated Response: {response_text}")
     #print(f"{response_text}")
     # Print a new line
@@ -95,9 +107,24 @@ for tweet in tweets_data:
         sys.stdout.write(char)
         sys.stdout.flush()
         time.sleep(0.05)  # Adjust this value to speed up or slow down the effect
+    print(f"\nSentiment: {sentiment_result['label']} (Score: {sentiment_result['score']:.2f})\n")
 
     # Print another new line for spacing between tweets
     print("\n")
+
+# Aggregate the overall sentiment
+positive = sum(1 for resp in all_responses if resp['label'] == 'POSITIVE')
+negative = sum(1 for resp in all_responses if resp['label'] == 'NEGATIVE')
+
+if positive > negative:
+    overall_sentiment = "Positive"
+elif negative > positive:
+    overall_sentiment = "Negative"
+else:
+    overall_sentiment = "Neutral"
+
+print(f"Overall Sentiment of Responses: {overall_sentiment}")
+
 
 # Commit changes and close the connection
 conn.commit()
